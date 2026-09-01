@@ -51,32 +51,51 @@ public class TestPerformance {
 	//@Ignore
 	@Test
 	public void highVolumeTrackLocation() throws InterruptedException {
+		// Set up the GPS utility used to simulate user location tracking
 		GpsUtil gpsUtil = new GpsUtil();
+		// Set up the rewards service, backed by the external RewardCentral provider
 		RewardsService rewardsService = new RewardsService(gpsUtil, new RewardCentral());
-		// Users should be incremented up to 100,000, and test finishes within 15 minutes
+
+		// Configure the test to generate 100,000 internal test users
+		//  should be incremented up to 100,000, and test finishes within 15 minutes
 		InternalTestHelper.setInternalUserNumber(100000);
+
+		// Main service under test: handles user tracking and reward calculation
 		TourGuideService tourGuideService = new TourGuideService(gpsUtil, rewardsService);
 
+		// Retrieve the full list of generated test users
 		List<User> allUsers = tourGuideService.getAllUsers();
 
+		// Thread pool used to process users concurrently instead of sequentially,
+		// since sequential tracking of 100,000 users would take far too long
 		ExecutorService executor = Executors.newFixedThreadPool(200);
 
+		// Timer used to measure the total execution time
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 
+		// Submit one asynchronous tracking task per user to the thread pool;
+		// each task calls trackUserLocation independently and in parallel
 		List<CompletableFuture<Void>> futures = allUsers.stream()
 				.map(user -> CompletableFuture.runAsync(
 						() -> tourGuideService.trackUserLocation(user), executor))
 				.collect(Collectors.toList());
 
+		// Wait for all tracking tasks to complete before measuring the elapsed time
 		CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
+		// Stop the timer once every user has been tracked
 		stopWatch.stop();
+		// Release the thread pool's resources now that all tasks are done
 		executor.shutdown();
+		// Stop the background location tracker so the test can terminate cleanly
 		tourGuideService.tracker.stopTracking();
 
+		// Log the total elapsed time in seconds for visibility
 		System.out.println("highVolumeTrackLocation: Time Elapsed: "
 				+ TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()) + " seconds.");
+
+		// Assert that the total time stayed within the 15-minute requirement
 		assertTrue(TimeUnit.MINUTES.toSeconds(15) >= TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
 	}
 
@@ -109,5 +128,6 @@ public class TestPerformance {
         assertTrue(TimeUnit.MINUTES.toSeconds(20) >= TimeUnit.MILLISECONDS.toSeconds(stopWatch.getTime()));
     }
 }
+
 	
 
